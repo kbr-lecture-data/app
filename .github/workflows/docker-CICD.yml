@@ -1,0 +1,70 @@
+name: Docker Image CI/CD
+
+# main 브랜치에 push 될 때 아래의 job들을 순차적으로 진행 
+on:
+  push:
+    branches: [ "main" ]
+
+# job : 작업내용
+jobs:
+  # 1. CI - 통합 (build)
+  build:
+    # ubuntu 환경에서 진행
+    runs-on: ubuntu-latest
+    # 스텝별로 진행
+    steps:
+      # step1. 저장소의 main브랜치 내려받기
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main 
+      # step2. JDK 17 설치 
+      - name: Set Up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      # step3. Gradle 실행 권한 부여
+      - name: Grant permission for gradlew
+        run: chmod +x ./gradlew
+      # step4. Gradle Build 
+      - name: Build with Gradle
+        run: ./gradlew clean build -x test
+      # step5. Dockerfile을 이용하여 도커 이미지로 빌드 및 Dockerhub에 발생(push)
+      - name: Docker build and publish
+        run: |
+          docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/${{ vars.APP_NAME }} ./
+          docker push ${{ secrets.DOCKER_USERNAME }}/${{ vars.APP_NAME }}
+        
+  # 2. CD - 배포 (deploy)
+  deploy:
+    # needs를 통해 build job이 수행 성공 시에만 작업되도록 설정
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+      # step1. NCP SSH 접속 / docker image pull & run
+      - name: NCP SSH Login and Docker Image pull and run
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.NCP_HOST }}
+          username: ${{ secrets.NCP_USERNAME }}
+          password: ${{ secrets.NCP_PASSWORD }}
+          port: ${{ secrets.NCP_PORT }}
+          script: |
+            docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+            docker stop ${{ vars.APP_NAME }}
+            docker rm -f ${{ vars.APP_NAME }}
+            docker run -d -p 8080:8080 \
+            -e SPRING_PROFILES_ACTIVE=prod \
+            -e PROD_DB_URL=${{ secrets.PROD_DB_URL }} \
+            -e PROD_DB_USERNAME=${{ secrets.PROD_DB_USERNAME }} \
+            -e PROD_DB_PASSWORD=${{ secrets.PROD_DB_PASSWORD }} \
+            --name ${{ vars.APP_NAME }} \
+            ${{ secrets.DOCKER_USERNAME }}/${{ vars.APP_NAME }}
+            docker image prune -f
+            
+            
+    
+    
