@@ -1,5 +1,5 @@
 # 베이스 이미지 (jar 실행을 위한 jdk 이미지)
-FROM openjdk-17-jdk
+FROM openjdk:17
 # 작성자 라벨 생성
 LABEL maintainer="kangbroo <teacherboram@gmail.com>"
 # 버전 라벨 생성
